@@ -44,4 +44,16 @@ func TestSMTPSenderBuildMessage(t *testing.T) {
 func TestSMTPSenderHost(t *testing.T) {
 	s := NewSMTPSender(SMTPConfig{Addr: "smtp.example.com:587"})
 	require.Equal(t, "smtp.example.com", s.host())
+	require.Equal(t, 587, s.port())
+	require.False(t, s.isImplicitTLS())
+}
+
+func TestSMTPSenderPortDetect(t *testing.T) {
+	ssl := NewSMTPSender(SMTPConfig{Addr: "smtp.gmail.com:465"})
+	require.True(t, ssl.isImplicitTLS())
+	require.Equal(t, 465, ssl.port())
+
+	noPort := NewSMTPSender(SMTPConfig{Addr: "smtp.example.com"})
+	require.False(t, noPort.isImplicitTLS())
+	require.Equal(t, 25, noPort.port())
 }

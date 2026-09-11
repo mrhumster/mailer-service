@@ -4,9 +4,18 @@ DEPLOYMENT := mailer-service
 VERSION ?= $(shell git describe --tags --always || echo "latest")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-.PHONY: all build push deploy clean test logs
+.PHONY: all build push deploy clean test logs smtp-secret
 
 all: build push deploy
+
+# Применяет реальный SMTP_PASS императивно (не коммитится в git).
+# Запуск: make smtp-secret SMTP_PASS='<app-password>'
+smtp-secret:
+	@[ -n "$(SMTP_PASS)" ] || (echo "Usage: make smtp-secret SMTP_PASS='<app-password>'" && exit 1)
+	@echo "Applying secret smtp-credentials (SMTP_PASS from CLI)..."
+	kubectl -n $(NAMESPACE) create secret generic smtp-credentials \
+		--from-literal=SMTP_PASS="$(SMTP_PASS)" \
+		--dry-run=client -o yaml | kubectl apply -f -
 
 build:
 	@echo "Building docker image $(IMAGE_NAME):$(VERSION)..."
