@@ -1,0 +1,29 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: mailer-keda
+  namespace: go-app
+spec:
+  scaleTargetRef:
+    name: mailer-service
+  cooldownPeriod: 120
+  maxReplicaCount: 1
+  minReplicaCount: 0
+  triggers:
+    - type: redis
+      authenticationRef:
+        name: keda-redis-auth
+      metadata:
+        address: casbin-redis-master.go-app.svc.cluster.local:6379
+        databaseIndex: "2"
+        listName: "asynq:{emails}:pending"
+        listLength: "2"
+    - type: redis
+      authenticationRef:
+        name: keda-redis-auth
+      metadata:
+        address: casbin-redis-master.go-app.svc.cluster.local:6379
+        databaseIndex: "2"
+        listName: "asynq:{emails}:active"
+        listLength: "2"
+        type: "zset"
