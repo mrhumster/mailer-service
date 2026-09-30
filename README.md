@@ -29,10 +29,17 @@ itself **never** stores tokens or talks to the database — it only renders and 
 | Task | Queue | Payload |
 | --- | --- | --- |
 | `email:verification` | `emails` (priority 6) | `{user_id, email, token}` |
+| `email:download_ready` | `emails` (priority 6) | `{user_id, email, stream_id, stream_url, size}` |
 
 `EmailVerificationPayload` (`internal/queue/payload.go`): `user_id uuid.UUID`, `email string`,
 `token string`. The rendered link is `${FRONTEND_URL}/verify?token=<token>`; trailing slashes on
 `FRONTEND_URL` are trimmed.
+
+`EmailDownloadReadyPayload`: `user_id`, `email`, `stream_id`, `stream_url`, `size int64`.
+The producer is the **export worker** (`services/transcoder-service/cmd/exporter`), which enqueues
+after the MP4 is in storage and stream-service has been told the export succeeded. It builds
+`stream_url` itself (`${FRONTEND_URL}/streams/<id>`) because it owns `FRONTEND_URL`; this service
+only renders. `size` is optional and formatted for humans (`1.3 GiB`), omitted when `<= 0`.
 
 ## Modes
 
@@ -83,7 +90,7 @@ Plus the shared asynq metrics from `go-shared/metrics`: `asynq_task_processed_to
 `ps aux` exec). Because KEDA holds the pod at 0 replicas when idle, the asynq and business series
 disappear from Prometheus between bursts — empty panels are expected, not a broken pipeline.
 
-## Producer contract (identity-service)
+## Producer contract
 
 `internal/notifier/notifier.go` enqueues the task; the flow lives in the verification service and the
 register/resend handlers:
@@ -95,6 +102,14 @@ register/resend handlers:
 
 The email copy says the link is valid for **2 hours**; that TTL is owned by identity-service, not this
 worker. Keep them in sync if `VERIFY_TOKEN_TTL` is ever changed.
+
+### transcoder-service (export worker)
+
+`HandleEmailDownloadReady` renders the "your video is ready" mail. The link points at the **stream
+page**, not at the file: downloads are owner-only and go through stream-service, so a direct object
+URL would be both unusable for a guest and trivially shareable. The exporter enqueues *after* the
+gRPC callback and swallows its own failures, so this service can be down during an export without
+breaking it — the file is downloadable from the web either way.
 
 ## Configuration
 

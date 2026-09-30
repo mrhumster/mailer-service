@@ -40,3 +40,32 @@ func (h *HandleEmailVerification) HandleEmailVerificationTask(ctx context.Contex
 	metrics.Duration.Observe(time.Since(start).Seconds())
 	return nil
 }
+
+type HandleEmailDownloadReady struct {
+	sender mailer.EmailSender
+}
+
+func NewHandleEmailDownloadReady(sender mailer.EmailSender) *HandleEmailDownloadReady {
+	return &HandleEmailDownloadReady{sender: sender}
+}
+
+func (h *HandleEmailDownloadReady) HandleEmailDownloadReadyTask(ctx context.Context, t *asynq.Task) error {
+	var p EmailDownloadReadyPayload
+	if err := json.Unmarshal(t.Payload(), &p); err != nil {
+		return fmt.Errorf("json unmarshal failed: %w", asynq.SkipRetry)
+	}
+
+	msg, err := mailer.NewDownloadReadyEmail(p.Email, p.StreamURL, p.Size)
+	if err != nil {
+		return fmt.Errorf("build download ready email: %w", asynq.SkipRetry)
+	}
+
+	start := time.Now()
+	if err := h.sender.Send(ctx, msg); err != nil {
+		metrics.SentError()
+		return fmt.Errorf("send download ready email: %w", err)
+	}
+	metrics.SentSuccess()
+	metrics.Duration.Observe(time.Since(start).Seconds())
+	return nil
+}

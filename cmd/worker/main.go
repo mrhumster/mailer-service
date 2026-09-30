@@ -61,11 +61,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	handler := queue.NewHandleEmailVerification(sender, cfg.Mail.FrontendURL)
+	verification := queue.NewHandleEmailVerification(sender, cfg.Mail.FrontendURL)
+	downloadReady := queue.NewHandleEmailDownloadReady(sender)
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(
 		queue.TaskEmailVerification,
-		sharedmetrics.Instrument(queue.TaskEmailVerification, handler.HandleEmailVerificationTask),
+		sharedmetrics.Instrument(queue.TaskEmailVerification, verification.HandleEmailVerificationTask),
+	)
+	mux.HandleFunc(
+		queue.TaskEmailDownloadReady,
+		sharedmetrics.Instrument(queue.TaskEmailDownloadReady, downloadReady.HandleEmailDownloadReadyTask),
 	)
 
 	slog.Info("mailer worker started...")

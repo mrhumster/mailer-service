@@ -2,6 +2,8 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 
@@ -90,4 +92,66 @@ func TestLogSenderSmoke(t *testing.T) {
 		Body:    "b",
 	})
 	require.NoError(t, err)
+}
+func makeDownloadReadyTask(t *testing.T, p EmailDownloadReadyPayload) *asynq.Task {
+	t.Helper()
+	payload, err := json.Marshal(p)
+	require.NoError(t, err)
+	return asynq.NewTask(TaskEmailDownloadReady, payload)
+}
+
+func TestHandleEmailDownloadReadyTaskSuccess(t *testing.T) {
+	s := &fakeSender{}
+	h := NewHandleEmailDownloadReady(s)
+	streamID := uuid.New()
+	task := makeDownloadReadyTask(t, EmailDownloadReadyPayload{
+		UserID:    uuid.New(),
+		Email:     "owner@x.co",
+		StreamID:  streamID,
+		StreamURL: "https://example.com/streams/" + streamID.String(),
+		Size:      1024,
+	})
+
+	require.NoError(t, h.HandleEmailDownloadReadyTask(context.Background(), task))
+
+	sent := s.calls()
+	require.Len(t, sent, 1)
+	require.Equal(t, "owner@x.co", sent[0].To)
+	require.Contains(t, sent[0].Body, "https://example.com/streams/"+streamID.String())
+}
+
+func TestHandleEmailDownloadReadyTaskSendFailureRetries(t *testing.T) {
+	s := &fakeSender{err: errors.New("smtp down")}
+	h := NewHandleEmailDownloadReady(s)
+	task := makeDownloadReadyTask(t, EmailDownloadReadyPayload{
+		Email:     "owner@x.co",
+		StreamURL: "https://example.com/streams/1",
+	})
+
+	err := h.HandleEmailDownloadReadyTask(context.Background(), task)
+	// A transport failure is worth retrying: the file is ready either way.
+	require.Error(t, err)
+	require.NotErrorIs(t, err, asynq.SkipRetry)
+}
+
+func TestHandleEmailDownloadReadyTaskSkipsRetryOnBadInput(t *testing.T) {
+	cases := map[string]*asynq.Task{
+		"unparsable payload": asynq.NewTask(TaskEmailDownloadReady, []byte("{")),
+		"no recipient": makeDownloadReadyTask(t, EmailDownloadReadyPayload{
+			StreamURL: "https://example.com/streams/1",
+		}),
+		"no stream url": makeDownloadReadyTask(t, EmailDownloadReadyPayload{
+			Email: "owner@x.co",
+		}),
+	}
+	for name, task := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := &fakeSender{}
+			h := NewHandleEmailDownloadReady(s)
+			err := h.HandleEmailDownloadReadyTask(context.Background(), task)
+			require.Error(t, err)
+			require.ErrorIs(t, err, asynq.SkipRetry)
+			require.Empty(t, s.calls())
+		})
+	}
 }
