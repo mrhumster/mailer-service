@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -67,5 +68,8 @@ func (h *HandleEmailDownloadReady) HandleEmailDownloadReadyTask(ctx context.Cont
 	}
 	metrics.SentSuccess()
 	metrics.Duration.Observe(time.Since(start).Seconds())
+	// The queue holds no record of a task once it is done, so without this
+	// line there is no way to tell a delivered mail from a task that vanished.
+	slog.Info("download ready email sent", "to", p.Email, "stream_url", p.StreamURL, "took", time.Since(start))
 	return nil
 }
