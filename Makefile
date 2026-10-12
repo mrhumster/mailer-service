@@ -40,7 +40,7 @@ test:
 	go test -v ./...
 
 logs:
-	kubectl -n $(NAMESPACE) logs -f -l app=mailer
+	kubectl -n $(NAMESPACE) logs -f -l app=$(DEPLOYMENT)
 
 clean:
 	rm -f mailer-worker
